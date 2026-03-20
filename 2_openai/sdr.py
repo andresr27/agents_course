@@ -95,8 +95,8 @@ tool3 = sales_agent3.as_tool(tool_name="sales_agent3", tool_description=descript
 def send_html_email(subject: str, html_body: str) -> Dict[str, str]:
     """ Send out an email with the given subject and HTML body to all sales prospects """
     sg = sendgrid.SendGridAPIClient(api_key=os.environ.get('SENDGRID_API_KEY'))
-    from_email = Email("ed@edwarddonner.com")  # Change to your verified sender
-    to_email = To("ed.donner@gmail.com")  # Change to your recipient
+    from_email = Email("tovtoc@wido.uy")  # Change to your verified sender
+    to_email = To("tovtoc@gmail.com")  # Change to your recipient
     content = Content("text/html", html_body)
     mail = Mail(from_email, to_email, subject, content).get()
     sg.client.mail.send.post(request_body=mail)
@@ -152,16 +152,42 @@ Crucial Rules:
 """
 
 
+import agents.tracing as tracing
+from agents.tracing.traces import Scope
+
 async def main():
     sales_manager = Agent(
         name="Sales Manager",
         instructions=sales_manager_instructions,
         tools=tools,
         handoffs=handoffs,
-        model="gpt-4o-mini")
+        model="gpt-4o-mini"
+    )
     message = "Send out a cold sales email addressed to Dear CEO from Alice"
-    # Assuming 'sales_manager' is already defined
-    with trace("Automated SDR"):
+
+    # Optional: let exporter authenticate (only if you want upload attempts)
+    if os.environ.get("OPENAI_API_KEY"):
+        tracing.set_tracing_export_api_key(os.environ["OPENAI_API_KEY"])
+
+    # Create and start trace via provider
+    prov = tracing.get_trace_provider()
+    trace_obj = prov.create_trace("Automated SDR")
+    if hasattr(trace_obj, "start"):
+        trace_obj.start()
+    print("Created trace", getattr(trace_obj, "trace_id", None) or getattr(trace_obj, "id", None))
+
+    scope = Scope()
+    token = scope.set_current_trace(trace_obj)  # activate trace
+    print("Setting current trace:", getattr(trace_obj, "trace_id", None) or getattr(trace_obj, "id", None))
+    try:
         print(message)
         result = await Runner.run(sales_manager, message)
-        print(result)
+        print("Result:", result)
+    finally:
+        # Reset current trace (pass the token returned by set_current_trace)
+        scope.reset_current_trace(token)
+        # best-effort shutdown/flush exporter
+        try:
+            prov.shutdown()
+        except Exception:
+            pass
