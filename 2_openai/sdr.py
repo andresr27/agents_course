@@ -1,57 +1,42 @@
-# %%
+import os
+import asyncio
 from dotenv import load_dotenv
 from openai import AsyncOpenAI
-from agents import Agent, Runner, trace, function_tool, OpenAIChatCompletionsModel, enable_verbose_stdout_logging, \
-    input_guardrail, GuardrailFunctionOutput
+
+from agents import Agent, Runner, trace, function_tool, OpenAIChatCompletionsModel, input_guardrail, GuardrailFunctionOutput, enable_verbose_stdout_logging
+import agents.tracing as tracing
 from typing import Dict
+
+# No domain configured for Sngrid using smtplib instead!
 import sendgrid
-import os
 from sendgrid.helpers.mail import Mail, Email, To, Content
-from pydantic import BaseModel
 
-# %%
-enable_verbose_stdout_logging()
-# trace.enable_tracing()
+import smtplib
+from email.mime.text import MIMEText
+from email.mime.multipart import MIMEMultipart
+
+# Load env and enable verbose logs
 load_dotenv(override=True)
+#enable_verbose_stdout_logging()
 
-import agents
+# Check if traces enabled.
+if os.environ.get("OPENAI_API_KEY"):
+    tracing.set_tracing_export_api_key(os.environ["OPENAI_API_KEY"])
 
-print("agents.__file__:", agents.__file__)
-print("agents.__version__:", getattr(agents, '__version__', 'N/A'))
-print("trace:", agents.trace)
-# %%
-openai_api_key = os.getenv('OPENAI_API_KEY')
-google_api_key = os.getenv('GOOGLE_API_KEY')
-deepseek_api_key = os.getenv('DEEPSEEK_API_KEY')
-openrouter_api_key = os.getenv('OPENROUTER_API_KEY')
-trace_enabled = os.getenv('OPENAI_AGENTS_TRACES')
+# LLM Clients
+GEMINI_BASE_URL = "https://generativelanguage.googleapis.com/v1beta/openai/"
+DEEPSEEK_BASE_URL = "https://api.deepseek.com/v1"
+OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1"
 
-if openai_api_key:
-    print(f"OpenAI API Key exists and begins {openai_api_key[:8]}")
-else:
-    print("OpenAI API Key not set")
+deepseek_client = AsyncOpenAI(base_url=DEEPSEEK_BASE_URL, api_key=os.getenv("DEEPSEEK_API_KEY"))
+gemini_client = AsyncOpenAI(base_url=GEMINI_BASE_URL, api_key=os.getenv("GOOGLE_API_KEY"))
+llama_client = AsyncOpenAI(base_url=OPENROUTER_BASE_URL, api_key=os.getenv("OPENROUTER_API_KEY"))
 
-if google_api_key:
-    print(f"Google API Key exists and begins {google_api_key[:2]}")
-else:
-    print("Google API Key not set (and this is optional)")
+deepseek_model = OpenAIChatCompletionsModel(model="deepseek-chat", openai_client=deepseek_client)
+gemini_model = OpenAIChatCompletionsModel(model="gemini-2.0-flash", openai_client=gemini_client)
+llama3_3_model = OpenAIChatCompletionsModel(model="meta-llama/llama-3.3-8b-instruct", openai_client=llama_client)
 
-if deepseek_api_key:
-    print(f"DeepSeek API Key exists and begins {deepseek_api_key[:3]}")
-else:
-    print("DeepSeek API Key not set (and this is optional)")
-
-if openrouter_api_key:
-    print(f"Groq API Key exists and begins {openrouter_api_key[:4]}")
-else:
-    print("Groq API Key not set (and this is optional)")
-
-if trace_enabled:
-    print("Trace enabled")
-else:
-    print("Trace not enabled")
-
-# %%
+# Sales Agent instructions
 instructions1 = "You are a sales agent working for ComplAI, \
 a company that provides a SaaS tool for ensuring SOC2 compliance and preparing for audits, powered by AI. \
 You write professional, serious cold emails."
@@ -63,47 +48,46 @@ You write witty, engaging cold emails that are likely to get a response."
 instructions3 = "You are a busy sales agent working for ComplAI, \
 a company that provides a SaaS tool for ensuring SOC2 compliance and preparing for audits, powered by AI. \
 You write concise, to the point cold emails."
-# %% md
-### It's easy to use any models with OpenAI compatible endpoints
-# %%
-GEMINI_BASE_URL = "https://generativelanguage.googleapis.com/v1beta/openai/"
-DEEPSEEK_BASE_URL = "https://api.deepseek.com/v1"
-OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1"  # "https://api.groq.com/openai/v1"
-# %%
 
-deepseek_client = AsyncOpenAI(base_url=DEEPSEEK_BASE_URL, api_key=deepseek_api_key)
-gemini_client = AsyncOpenAI(base_url=GEMINI_BASE_URL, api_key=google_api_key)
-groq_client = AsyncOpenAI(base_url=OPENROUTER_BASE_URL, api_key=openrouter_api_key)
-
-deepseek_model = OpenAIChatCompletionsModel(model="deepseek-chat", openai_client=deepseek_client)
-gemini_model = OpenAIChatCompletionsModel(model="gemini-2.0-flash", openai_client=gemini_client)
-llama3_3_model = OpenAIChatCompletionsModel(model="meta-llama/llama-3.3-8b-instruct", openai_client=groq_client)
-# %%
 sales_agent1 = Agent(name="DeepSeek Sales Agent", instructions=instructions1, model=deepseek_model)
 sales_agent2 = Agent(name="Gemini Sales Agent", instructions=instructions2, model=gemini_model)
 sales_agent3 = Agent(name="Llama3.3 Sales Agent", instructions=instructions3, model=llama3_3_model)
-# %%
-description = "Write a cold sales email"
 
-tool1 = sales_agent1.as_tool(tool_name="sales_agent1", tool_description=description)
-tool2 = sales_agent2.as_tool(tool_name="sales_agent2", tool_description=description)
-tool3 = sales_agent3.as_tool(tool_name="sales_agent3", tool_description=description)
+tool1 = sales_agent1.as_tool(tool_name="sales_agent1", tool_description="Write a cold sales email")
+tool2 = sales_agent2.as_tool(tool_name="sales_agent2", tool_description="Write a cold sales email")
+tool3 = sales_agent3.as_tool(tool_name="sales_agent3", tool_description="Write a cold sales email")
 
 
-# %%
 @function_tool
 def send_html_email(subject: str, html_body: str) -> Dict[str, str]:
-    """ Send out an email with the given subject and HTML body to all sales prospects """
-    sg = sendgrid.SendGridAPIClient(api_key=os.environ.get('SENDGRID_API_KEY'))
-    from_email = Email("tovtoc@wido.uy")  # Change to your verified sender
-    to_email = To("tovtoc@gmail.com")  # Change to your recipient
-    content = Content("text/html", html_body)
-    mail = Mail(from_email, to_email, subject, content).get()
-    sg.client.mail.send.post(request_body=mail)
-    return {"status": "success"}
+    """Send an HTML email using Gmail SMTP and your Google App Password."""
+    sender_email = os.environ.get("GMAIL_USER")  # e.g. yourname@gmail.com
+    sender_password = os.environ.get("GMAIL_APP_PASSWORD") # 16-character app password
+    receiver_email = "andresrenaud@gmail.com"
+    print("Sending email...")
+    if not sender_email or not sender_password:
+        return {"status": "error", "message": "GMAIL_USER or GMAIL_APP_PASSWORD not set"}
+
+    message = MIMEMultipart("alternative")
+    message["Subject"] = subject
+    message["From"] = sender_email
+    message["To"] = receiver_email
+    message.attach(MIMEText(html_body, "html"))
 
 
-# %%
+    try:
+        with smtplib.SMTP_SSL("smtp.gmail.com", 465) as server:
+            server.login(sender_email, sender_password)
+            server.sendmail(sender_email, receiver_email, message.as_string())
+        print("Email sent.")
+        return {"status": "success"}
+    except Exception as e:
+        print(f"Email failed: {e}")
+        return {"status": "error", "message": str(e)}
+
+# Email Sender Agent
+
+# TOOLS: Simple email authoring tools
 subject_instructions = "You can write a subject for a cold sales email. \
 You are given a message and you need to write a subject for an email that is likely to get a response."
 
@@ -111,30 +95,31 @@ html_instructions = "You can convert a text email body to an HTML email body. \
 You are given a text email body which might have some markdown \
 and you need to convert it to an HTML email body with simple, clear, compelling layout and design."
 
-subject_writer = Agent(name="Email subject writer", instructions=subject_instructions, model="gpt-4o-mini")
-subject_tool = subject_writer.as_tool(tool_name="subject_writer",
-                                      tool_description="Write a subject for a cold sales email")
+# Making one call to write the subject
+subject_writer = Agent(name="Email subject writer", instructions=subject_instructions, model="gpt-5-mini")
+subject_tool = subject_writer.as_tool(tool_name="subject_writer", tool_description="Write a subject for a cold sales email")
 
-html_converter = Agent(name="HTML email body converter", instructions=html_instructions, model="gpt-4o-mini")
-html_tool = html_converter.as_tool(tool_name="html_converter",
-                                   tool_description="Convert a text email body to an HTML email body")
-# %%
-email_tools = [subject_tool, html_tool, send_html_email]
-# %%
-instructions = "You are an email formatter and sender. You receive the body of an email to be sent. \
+# Another to convert it html
+html_converter = Agent(name="HTML email body converter", instructions=html_instructions, model="gpt-5-mini")
+html_tool = html_converter.as_tool(tool_name="html_converter",tool_description="Convert a text email body to an HTML email body")
+
+
+instructions ="You are an email formatter and sender. You receive the body of an email to be sent. \
 You first use the subject_writer tool to write a subject for the email, then use the html_converter tool to convert the body to HTML. \
 Finally, you use the send_html_email tool to send the email with the subject and HTML body."
+
 
 emailer_agent = Agent(
     name="Email Manager",
     instructions=instructions,
-    tools=email_tools,
-    model="gpt-4o-mini",
-    handoff_description="Convert an email to HTML and send it")
-# %%
-tools = [tool1, tool2, tool3]
-handoffs = [emailer_agent]
-# %%
+    tools=[subject_tool, html_tool, send_html_email],
+    model="gpt-5-mini",
+    handoff_description="Convert an email to HTML and send it",
+)
+
+
+# Sale Manager Agent
+
 sales_manager_instructions = """
 You are a Sales Manager at ComplAI. Your goal is to find the single best cold sales email using the sales_agent tools.
 
@@ -152,42 +137,20 @@ Crucial Rules:
 """
 
 
-import agents.tracing as tracing
-from agents.tracing.traces import Scope
-
-async def main():
+# Runner wrapper using the recommended trace() context manager
+async def run_sales_flow():
     sales_manager = Agent(
         name="Sales Manager",
         instructions=sales_manager_instructions,
-        tools=tools,
-        handoffs=handoffs,
-        model="gpt-4o-mini"
+        tools=[tool1, tool2],
+        handoffs=[emailer_agent],
+        model="gpt-5-mini",
     )
     message = "Send out a cold sales email addressed to Dear CEO from Alice"
 
-    # Optional: let exporter authenticate (only if you want upload attempts)
-    if os.environ.get("OPENAI_API_KEY"):
-        tracing.set_tracing_export_api_key(os.environ["OPENAI_API_KEY"])
-
-    # Create and start trace via provider
-    prov = tracing.get_trace_provider()
-    trace_obj = prov.create_trace("Automated SDR")
-    if hasattr(trace_obj, "start"):
-        trace_obj.start()
-    print("Created trace", getattr(trace_obj, "trace_id", None) or getattr(trace_obj, "id", None))
-
-    scope = Scope()
-    token = scope.set_current_trace(trace_obj)  # activate trace
-    print("Setting current trace:", getattr(trace_obj, "trace_id", None) or getattr(trace_obj, "id", None))
-    try:
-        print(message)
+    with trace("Automated SDR"):
         result = await Runner.run(sales_manager, message)
-        print("Result:", result)
-    finally:
-        # Reset current trace (pass the token returned by set_current_trace)
-        scope.reset_current_trace(token)
-        # best-effort shutdown/flush exporter
-        try:
-            prov.shutdown()
-        except Exception:
-            pass
+
+
+if __name__ == "__main__":
+    asyncio.run(run_sales_flow())
