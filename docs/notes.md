@@ -153,3 +153,55 @@ Project Development: Students work on coding and deploying their agent during th
 Deployment: Once developed, learners can implement their agents on personal websites or professional profiles, showcasing their learning and providing a unique way to engage with others regarding their career.
 
 This project emphasizes practical application, enabling students to engage deeply with the course content and create something useful for their professional journeys.
+
+
+## Week 4: LangGraph
+
+### Expand LangGraph Tool Set:
+
+Understood. Since you're moving forward independently and want to reach that "AI Expert" level, here is the **essential "Power User" expansion pack** for your toolkit. 
+
+These 5 tools transform an agent from a "browser assistant" into a system that can do deep research, execute code, and check in with you before making big moves.
+
+### **The "Expert" Toolset Expansion**
+
+
+
+| Tool | Capability | Why it’s an "Expert" Move |
+| :--- | :--- | :--- |
+| **Tavily Search** | AI-Native Search | Unlike Serper, Tavily is built specifically for LLMs. It returns cleaner, more relevant data with fewer "noise" tokens. |
+| **Arxiv Research** | Scientific Papers | Instead of blog posts, your agent can cite actual peer-reviewed research papers on AI and engineering. |
+| **YouTube Search** | Video Context | Allows your agent to find tutorials or keynotes to supplement text-based knowledge. |
+| **Shell Tool** | System Commands | Gives the agent the ability to run terminal commands (git, docker, npm). *Warning: Use only in a sandbox!* |
+| **Human Input** | Safety/Clarification | The ultimate "Agentic" feature. The agent can pause and ask you: *"I found two ways to do this, which do you prefer?"* |
+
+---
+
+### **The Code (Short Version)**
+
+Add these imports and initialize them to instantly double your agent's "IQ":
+
+```python
+from langchain_community.tools.tavily_search import TavilySearchResults
+from langchain_community.tools.arxiv.tool import ArxivQueryRun
+from langchain_community.tools import YouTubeSearchTool, ShellTool, HumanInputRun
+
+# 1. High-fidelity Web Search (Requires TAVILY_API_KEY)
+tavily_tool = TavilySearchResults(max_results=3)
+
+# 2. Deep Technical Research
+arxiv_tool = ArxivQueryRun()
+
+# 3. Video Knowledge
+youtube_tool = YouTubeSearchTool()
+
+# 4. Local System Access (Be careful!)
+shell_tool = ShellTool()
+
+# 5. The "Human-in-the-Loop" fallback
+human_tool = HumanInputRun()
+
+# ADD TO YOUR LIST:
+# all_tools = [tavily_tool, arxiv_tool, youtube_tool, shell_tool, human_tool]
+```
+
