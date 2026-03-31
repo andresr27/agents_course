@@ -11,8 +11,8 @@ polygon_api_key = os.getenv("POLYGON_API_KEY")
 # The MCP server for the Trader to read Market Data
 if is_paid_polygon or is_realtime_polygon:
     market_mcp = {
-        "command": "uv", # Changed from uvx
-        "args": ["tool", "run", "--from", "git+https://github.com", "mcp_polygon"], # Added tool, run
+        "command": "uvx",
+        "args": ["--from", "git+https://github.com", "mcp_polygon"],
         "env": {"POLYGON_API_KEY": polygon_api_key},
     }
 else:
@@ -28,13 +28,10 @@ trader_mcp_server_params = [
 # The full set of MCP servers for the researcher: Fetch, Tavily Search and Memory
 def researcher_mcp_server_params(name: str):
     return [
-        {
-            "command": "uv",
-            "args": ["tool", "run", "mcp-server-fetch"]
-        },
+        {"command": "uvx", "args": ["mcp-server-fetch"]},
         {
             "command": "npx",
-            "args": ["-y", "tavily-mcp@latest"], # Use tavily-mcp instead of @tavily/mcp-server
+            "args": ["-y", "@tavily/mcp-server"], # Swapped Brave for Tavily
             "env": tavily_env,
         },
         {
